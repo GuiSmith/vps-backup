@@ -10,7 +10,7 @@ BKP_FILE_PATH="$1"
 KEY_PATH="$2"
 DEST_DIR="$3"
 
-echo "Starting backup"
+echo "Starting restoration"
 
 mkdir -p "$DEST_DIR"
 
