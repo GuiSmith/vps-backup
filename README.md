@@ -1,124 +1,120 @@
 # VPS Backups
 
-This directory contains the backup configuration and documentation for this VPS.
+Scripts to back up this VPS into a single encrypted file and to restore it.
+`backup.sh` collects configured directories and project backups, then packs and encrypts everything with `age`. `restore.sh` decrypts and extracts that file.
 
-Backup system location:
+## Requirements
 
-```text
-/root/ops/backups/
-```
+- `bash`
+- `yq` (reads `config.yml`)
+- `tar` and `gzip`
+- `age`
+- `make` (runs each project's backup target)
+- Read access to every configured path. Paths under `/etc` usually require running as root.
 
-Backup artifact output location:
+## Configuration (`config.yml`)
 
-```text
-/var/backups/projects/YYYY-MM-DD/
-```
+Both scripts are configured only through `config.yml`, which `backup.sh` reads from the **current directory**.
 
-## Intended backup types
+| Key | Meaning |
+|---|---|
+| `version` | Config format version. Informational only; not read by the scripts. |
+| `projects-directory` | Parent directory that contains one folder per project. |
+| `projects-backup-command` | `make` target run inside each project folder to produce its backup. |
+| `backup-directory` | Where the final encrypted backup file is written. Created with mode `700` if it does not exist. |
+| `age-recipient` | `age` public key used to encrypt the backup. |
+| `directories` | Map of `name: path`. Each path's content is copied into the backup under `directories/<name>/`. |
+| `projects` | List of project folder names inside `projects-directory`. |
 
-1. Database backups
-   - Use `pg_dump` against each project's Postgres container.
-   - Credentials come from the project's env file.
-   - Prefer `pg_dump -Fc` for restore flexibility.
-
-2. Directory backups
-   - Archive configured directories.
-   - Compress first, then encrypt.
-   - Upload the final encrypted artifacts with rclone.
-
-## Expected backup layout
-
-```text
-/var/backups/projects/2026-07-21/
-  manifest.json
-  backup.log
-  RESTORE.md
-  kanban/
-    databases/
-    directories/
-    metadata/
-  edudict/
-    databases/
-    directories/
-    metadata/
-  vps/
-    directories/
-    metadata/
-```
-
-## Config file
-
-Main config:
-
-```text
-/root/ops/backups/config.yml
-```
-
-Use it to map:
-
-- project name -> database containers
-- project name -> directories to archive
-- `vps` -> server-level config such as Nginx, cron, systemd, Docker, firewall metadata
-- rclone remote target
-- encryption settings
-
-## Rclone
-
-Once rclone is configured, set this in `config.yml`:
+Example:
 
 ```yaml
-remote:
-  rclone_target: google-drive:projetos/bkp
+version: 1.0.0
+
+projects-directory: /home/grodrigues/projetos
+projects-backup-command: "bkp"
+backup-directory: "/var/bkp"
+age-recipient: "age1..."
+
+directories:
+  cron: /etc/cron.d
+  # nginx: /etc/nginx
+
+projects:
+  - kanban
+  # - edudict
 ```
 
-Actual remote name/path can be different.
+### Project backup contract
 
-## Encryption note
+For each entry in `projects`, `backup.sh` runs:
 
-Recommended encryption tool: `age`.
+```bash
+make -C <projects-directory>/<project> <projects-backup-command> BKP_DIR=<temporary folder>
+```
 
-The VPS only needs the public recipient to encrypt backups. Keep the private key somewhere safe outside the VPS as well.
+The project's `Makefile` decides what to save (for example, a database dump or uploaded files) and must write it into `$(BKP_DIR)`. Each project included in the backup needs that target.
 
-## Backup script
+## Running a backup
 
-Script:
+From this directory:
+
+```bash
+./backup.sh
+```
+
+The script has no options. What it does:
+
+1. Creates a temporary folder `/tmp/backup-<timestamp>`.
+2. Copies the content of every entry in `directories` (`cp -a`, preserving permissions and timestamps).
+3. Runs the backup target of every entry in `projects`.
+4. Packs the temporary folder with `tar` + `gzip`, encrypts it with `age` and writes:
+
+   ```text
+   <backup-directory>/bkp-YYYY-MM-DD-HH-MM-SS.tar.gz.age
+   ```
+
+5. Deletes the temporary folder, also when the script fails.
+
+The script stops with an error if a configured directory or project folder does not exist, or if a copy or a project's backup target fails. Those checks happen before the final file is created, so in that case no backup file is written.
+
+Content of the backup file once decrypted and extracted:
 
 ```text
-/root/ops/backups/backup.sh
+directories/
+  <name>/        # one per entry in `directories`
+projects/
+  <project>/     # whatever that project's backup target wrote
 ```
 
-Dry run:
+## Restoring
 
 ```bash
-/root/ops/backups/backup.sh --dry-run
+./restore.sh <backup-file-path> <age-private-key-path> <destination-directory>
 ```
 
-Run local backup only, without upload:
+Example:
 
 ```bash
-/root/ops/backups/backup.sh --no-upload
+./restore.sh /var/bkp/bkp-2026-10-13-03-00-00.tar.gz.age ~/keys/backup.key /tmp/restore-test
 ```
 
-Run backup and upload to the configured rclone remote:
+The script creates the destination directory if needed, decrypts the file with the private key and extracts it there, producing the `directories/` and `projects/` layout above.
 
-```bash
-/root/ops/backups/backup.sh
-```
+It does **not** put anything back in its original location and does not restore databases. Copying files back and importing project data (for example, loading a database dump) are manual steps.
 
-Run only one project:
+## Encryption keys
 
-```bash
-/root/ops/backups/backup.sh --project kanban
-```
+- The VPS only needs the `age` public key (`age-recipient`) to create backups.
+- The matching private key is needed only to restore. Keep it somewhere safe **outside** the VPS; without it the backups cannot be read.
 
-The script writes:
+## Not implemented
 
-- `manifest.json`
-- `backup.log`
-- `RESTORE.md`
-- encrypted database dumps: `*.pgcustom.age`
-- encrypted directory archives: `*.tar.zst.age`
+- Upload to remote storage (e.g. rclone). Backups stay only in `backup-directory` on the VPS.
+- Rotation or deletion of old backups.
+- Command-line options such as dry run or backing up a single project.
+- Scheduling. Run the script manually or add it to cron yourself.
 
 ## Restore rule
 
-A backup is not trusted until at least one database dump and one directory archive have been restored successfully in a test location.
+A backup is not trusted until it has been restored successfully in a test location and its content (directory files and project data) has been checked.
