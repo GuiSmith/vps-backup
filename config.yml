@@ -1,0 +1,18 @@
+version: 1.0.0
+
+projects-directory: /opt/projects
+projects-backup-command: "bkp"
+backup-directory: "/var/bkp"
+age-recipient: "age1m2ylaxqctdxx0fsdcj7z4r8qm6ydnfh2xsr3hv5dfdgrp242hcrqt8sh2d"
+
+directories:
+  nginx: /etc/nginx
+  certificates: /etc/letsencrypt
+  cron: /etc/cron.d
+  systemd: /etc/systemd/system
+  docker: /etc/docker
+  backups: /root/ops/backups
+projects:
+  - kanban
+  - edudict
+  - OperaFR
