@@ -1,9 +1,9 @@
 version: 1.0.0
 
 projects-directory: /opt/projects
-projects-backup-command: "bkp"
-backup-directory: "/var/bkp"
-age-recipient: "age1m2ylaxqctdxx0fsdcj7z4r8qm6ydnfh2xsr3hv5dfdgrp242hcrqt8sh2d"
+projects-backup-command: bkp
+backup-directory: /var/bkp
+age-recipient: age1m2ylaxqctdxx0fsdcj7z4r8qm6ydnfh2xsr3hv5dfdgrp242hcrqt8sh2d
 
 directories:
   nginx: /etc/nginx
@@ -16,3 +16,7 @@ projects:
   - kanban
   - edudict
   - OperaFR
+restore: 
+  bkp-file-path: 
+  key-path: 
+  dest-dir: 
