@@ -26,6 +26,9 @@ leave() {
 echo "Creating $TMP_DIR"
 mkdir -p "$TMP_DIR"
 
+echo "Copying backup project"
+cp * "$TMP_DIR/"
+
 # Iterando por diretórios
 while IFS=$'\t' read -r DIR_NAME DIR; do
     echo "Processing $DIR_NAME: $DIR"
